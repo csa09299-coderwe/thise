@@ -1,0 +1,5 @@
+{
+  "name": "ArtEnhance AI",
+  "description": "An AI-powered assistant to enhance and creatively redesign your images. Upload an image, provide instructions, and get three high-quality variants: a clean enhancement, a stylized upgrade, and a creative reimagining.",
+  "requestFramePermissions": []
+}

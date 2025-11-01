@@ -1,0 +1,105 @@
+/* Dark Mode Theme */
+body {
+  background: #1a1a1a !important;
+  color: #e0e0e0 !important;
+}
+
+body,
+html {
+  background-color: #121212;
+  color: #ffffff;
+}
+
+/* Dark backgrounds */
+.dark-mode,
+[data-theme="dark"],
+body.dark {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+}
+
+/* Dark cards and containers */
+.card,
+.container,
+.panel,
+.box {
+  background-color: #1e1e1e !important;
+  color: #e0e0e0 !important;
+  border-color: #333 !important;
+}
+
+/* Dark inputs */
+input,
+textarea,
+select {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+  border-color: #444 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  background-color: #2a2a2a !important;
+  border-color: #667eea !important;
+  outline: none;
+}
+
+/* Dark buttons */
+button {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+  border-color: #444 !important;
+}
+
+button:hover {
+  background-color: #3a3a3a !important;
+}
+
+/* Dark scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #444 !important;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555 !important;
+}
+
+/* Dark links */
+a {
+  color: #667eea !important;
+}
+
+a:hover {
+  color: #764ba2 !important;
+}
+
+/* Override any light backgrounds */
+* {
+  background-color: inherit;
+  color: inherit;
+}
+
+/* Apply dark theme by default when this file is imported */
+:root {
+  --bg-primary: #121212;
+  --bg-secondary: #1e1e1e;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --border-color: #333;
+}
+
+body {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}

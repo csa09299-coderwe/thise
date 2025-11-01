@@ -1,87 +1,89 @@
-/* Dark Mode Theme */
+/* Dark Mode Theme with Blue Tones */
 body {
-  background: #1a1a1a !important;
-  color: #e0e0e0 !important;
+  background: #0f1729 !important;
+  color: #e0e8ff !important;
 }
 
 body,
 html {
-  background-color: #121212;
-  color: #ffffff;
+  background-color: #0a0e1a;
+  color: #dbe4ff;
 }
 
-/* Dark backgrounds */
+/* Dark backgrounds with blue tint */
 .dark-mode,
 [data-theme="dark"],
 body.dark {
-  background-color: #121212 !important;
-  color: #ffffff !important;
+  background-color: #0a0e1a !important;
+  color: #dbe4ff !important;
 }
 
-/* Dark cards and containers */
+/* Dark cards and containers with blue */
 .card,
 .container,
 .panel,
 .box {
-  background-color: #1e1e1e !important;
-  color: #e0e0e0 !important;
-  border-color: #333 !important;
+  background-color: #1a2332 !important;
+  color: #e0e8ff !important;
+  border-color: #2d3a52 !important;
 }
 
-/* Dark inputs */
+/* Dark inputs with blue accent */
 input,
 textarea,
 select {
-  background-color: #2a2a2a !important;
+  background-color: #1e2838 !important;
   color: #ffffff !important;
-  border-color: #444 !important;
+  border-color: #3a4a6b !important;
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-  background-color: #2a2a2a !important;
-  border-color: #667eea !important;
+  background-color: #243044 !important;
+  border-color: #4facfe !important;
   outline: none;
+  box-shadow: 0 0 8px rgba(79, 172, 254, 0.3);
 }
 
-/* Dark buttons */
+/* Dark buttons with blue */
 button {
-  background-color: #2a2a2a !important;
+  background-color: #1e2838 !important;
   color: #ffffff !important;
-  border-color: #444 !important;
+  border-color: #3a4a6b !important;
 }
 
 button:hover {
-  background-color: #3a3a3a !important;
+  background-color: #2a3a52 !important;
+  border-color: #4facfe !important;
 }
 
-/* Dark scrollbar */
+/* Blue-tinted scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a1a !important;
+  background: #0f1729 !important;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #444 !important;
+  background: #3a4a6b !important;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555 !important;
+  background: #4facfe !important;
 }
 
-/* Dark links */
+/* Blue links */
 a {
-  color: #667eea !important;
+  color: #4facfe !important;
 }
 
 a:hover {
-  color: #764ba2 !important;
+  color: #66b3ff !important;
 }
 
 /* Override any light backgrounds */
@@ -90,16 +92,28 @@ a:hover {
   color: inherit;
 }
 
-/* Apply dark theme by default when this file is imported */
+/* Apply dark blue theme by default when this file is imported */
 :root {
-  --bg-primary: #121212;
-  --bg-secondary: #1e1e1e;
-  --text-primary: #ffffff;
-  --text-secondary: #e0e0e0;
-  --border-color: #333;
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #1a2332;
+  --text-primary: #dbe4ff;
+  --text-secondary: #e0e8ff;
+  --border-color: #2d3a52;
+  --accent-blue: #4facfe;
+  --accent-blue-light: #66b3ff;
 }
 
 body {
   background: var(--bg-primary) !important;
   color: var(--text-primary) !important;
+}
+
+/* Blue gradient backgrounds for special elements */
+.gradient-blue {
+  background: linear-gradient(135deg, #1a2332 0%, #2d3a52 100%) !important;
+}
+
+/* Blue glow effect */
+.blue-glow {
+  box-shadow: 0 0 20px rgba(79, 172, 254, 0.3) !important;
 }

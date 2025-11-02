@@ -1,163 +1,231 @@
-import React, { useState, useCallback } from 'react';
-import { Header } from './components/Header';
-import { ImageUpload } from './components/ImageUpload';
-import { PromptInput } from './components/PromptInput';
-import { ResultCard } from './components/ResultCard';
-import { Loader } from './components/Loader';
-import { SparklesIcon } from './components/IconComponents';
-import { generateImageVariants } from './services/geminiService';
-import type { ArtEnhanceResponse, Variant } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { geminiService } from './services/geminiService';
+import { 
+  AppState, 
+  AnalysisResult, 
+  UploadedFile, 
+  AppError, 
+  APIError 
+} from './types';
+import Header from './components/Header';
+import ImageUpload from './components/ImageUpload';
+import PromptInput from './components/PromptInput';
+import Loader from './components/Loader';
+import ResultCard from './components/ResultCard';
+import './dark.css';
 
 const App: React.FC = () => {
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [prompt, setPrompt] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<ArtEnhanceResponse | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [state, setState] = useState<AppState>({
+    isLoading: false,
+    error: null,
+    currentResult: null,
+    history: [],
+    uploadedFile: null
+  });
 
-  const handleImageChange = useCallback((file: File | null) => {
-    setImageFile(file);
-    if (file) {
-      const reader = new FileReader();
-      reader.onerror = () => {
-        setError('Failed to read the image file. Please try another file.');
-        setImagePreview(null);
-      };
-      reader.onloadend = () => {
-        if (reader.result && typeof reader.result === 'string') {
-          setImagePreview(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setImagePreview(null);
-    }
+  // Cleanup function for preventing memory leaks
+  useEffect(() => {
+    return () => {
+      // Cleanup any ongoing operations
+      setState(prev => ({ ...prev, isLoading: false }));
+    };
   }, []);
 
-  const handleSubmit = async () => {
-    if (!imageFile) {
-      setError('Please upload an image.');
+  // Test API connection on mount
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const isConnected = await geminiService.testConnection();
+        if (!isConnected) {
+          setState(prev => ({
+            ...prev,
+            error: 'Failed to connect to Gemini API. Please check your configuration.'
+          }));
+        }
+      } catch (error) {
+        console.error('Connection test failed:', error);
+        setState(prev => ({
+          ...prev,
+          error: 'Unable to verify API connection.'
+        }));
+      }
+    };
+
+    testConnection();
+  }, []);
+
+  const handleFileSelect = useCallback((file: UploadedFile) => {
+    setState(prev => ({
+      ...prev,
+      uploadedFile: file,
+      error: null,
+      currentResult: null
+    }));
+  }, []);
+
+  const handleAnalyze = useCallback(async (prompt: string) => {
+    if (!state.uploadedFile) {
+      setState(prev => ({
+        ...prev,
+        error: 'Please upload an image first.'
+      }));
       return;
     }
+
     if (!prompt.trim()) {
-      setError('Please provide instructions.');
+      setState(prev => ({
+        ...prev,
+        error: 'Please enter a prompt.'
+      }));
       return;
     }
-    
-    setIsLoading(true);
-    setError(null);
-    setResults(null);
+
+    setState(prev => ({
+      ...prev,
+      isLoading: true,
+      error: null
+    }));
+
+    const startTime = Date.now();
 
     try {
-      const response = await generateImageVariants(imageFile, prompt.trim());
+      // Extract base64 data from data URL
+      const base64Data = state.uploadedFile.dataUrl.split(',')[1];
       
-      // Validate response
-      if (!response || !response.variants || response.variants.length === 0) {
-        throw new Error('No variants were generated. Please try again.');
+      const response = await geminiService.analyzeImage({
+        imageData: base64Data,
+        prompt: prompt.trim(),
+        mimeType: state.uploadedFile.type as 'image/jpeg' | 'image/png' | 'image/webp'
+      });
+
+      const processingTime = Date.now() - startTime;
+
+      if (response.success && response.data) {
+        const newResult: AnalysisResult = {
+          id: Date.now().toString(),
+          timestamp: new Date(),
+          prompt: prompt.trim(),
+          response: response.data,
+          imageData: state.uploadedFile.dataUrl,
+          processingTime
+        };
+
+        setState(prev => ({
+          ...prev,
+          currentResult: newResult,
+          history: [newResult, ...prev.history],
+          isLoading: false,
+          error: null
+        }));
+      } else {
+        throw new APIError(response.error || 'Analysis failed');
       }
+    } catch (error) {
+      console.error('Analysis error:', error);
       
-      setResults(response);
-    } catch (e) {
-      console.error('Error generating variants:', e);
-      let errorMessage = 'An unknown error occurred. Please try again later.';
-      
-      if (e instanceof Error) {
-        errorMessage = e.message;
-        // Provide more user-friendly messages for common errors
-        if (errorMessage.includes('API_KEY') || errorMessage.includes('API key')) {
-          errorMessage = 'API key is not configured. Please check your environment variables.';
-        } else if (errorMessage.includes('400')) {
-          errorMessage = 'The request was invalid. Please check your image and instructions.';
-        } else if (errorMessage.includes('401') || errorMessage.includes('403')) {
-          errorMessage = 'Authentication failed. Please check your API key.';
-        } else if (errorMessage.includes('429')) {
-          errorMessage = 'Too many requests. Please wait a moment and try again.';
-        } else if (errorMessage.includes('500') || errorMessage.includes('503')) {
-          errorMessage = 'Server error. Please try again later.';
-        }
+      let errorMessage = 'An unexpected error occurred.';
+      if (error instanceof APIError) {
+        errorMessage = error.message;
+      } else if (error instanceof AppError) {
+        errorMessage = error.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
-      
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: errorMessage
+      }));
     }
-  };
+  }, [state.uploadedFile]);
 
-  const handleReset = () => {
-    setImageFile(null);
-    setImagePreview(null);
-    setPrompt('');
-    setResults(null);
-    setError(null);
-  };
+  const handleClearError = useCallback(() => {
+    setState(prev => ({ ...prev, error: null }));
+  }, []);
 
-  const isFormComplete = imageFile && prompt.trim().length > 0;
+  const handleReset = useCallback(() => {
+    setState({
+      isLoading: false,
+      error: null,
+      currentResult: null,
+      history: [],
+      uploadedFile: null
+    });
+  }, []);
+
+  const handleDeleteResult = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      history: prev.history.filter(result => result.id !== id),
+      currentResult: prev.currentResult?.id === id ? null : prev.currentResult
+    }));
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 md:p-8">
-      <div className="w-full max-w-5xl mx-auto">
-        <Header />
-
-        {!results && !isLoading && (
-          <div className="w-full animate-fade-in space-y-8">
-            <div className="grid md:grid-cols-2 gap-8 items-start">
-              <ImageUpload onImageChange={handleImageChange} imagePreview={imagePreview} />
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-300">Your Instructions</h2>
-                <PromptInput value={prompt} onChange={setPrompt} />
-              </div>
-            </div>
-            {error && (
-              <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
+    <div className="app">
+      <Header onReset={handleReset} />
+      
+      <main className="main-content">
+        {state.error && (
+          <div className="error-banner" role="alert">
+            <span className="error-icon">⚠️</span>
+            <span className="error-message">{state.error}</span>
+            <button 
+              className="error-close" 
+              onClick={handleClearError}
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
           </div>
         )}
-        
-        {isLoading && <Loader />}
 
-        {results && (
-          <div className="animate-fade-in">
-            <h2 className="text-3xl font-bold text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-brand-purple to-brand-pink">Your Enhanced Images</h2>
-            {results.warnings && results.warnings.length > 0 && (
-                <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-4 py-3 rounded-lg mb-8 text-sm">
-                    <p className="font-bold">Warnings:</p>
-                    <ul className="list-disc list-inside ml-2">
-                        {results.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
-                    </ul>
-                </div>
-            )}
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {results.variants.map((variant: Variant) => (
-                <ResultCard key={variant.id} variant={variant} />
+        <div className="upload-section">
+          <ImageUpload 
+            onFileSelect={handleFileSelect}
+            disabled={state.isLoading}
+          />
+        </div>
+
+        {state.uploadedFile && (
+          <div className="analysis-section">
+            <PromptInput
+              onSubmit={handleAnalyze}
+              disabled={state.isLoading}
+              placeholder="What would you like to know about this image?"
+            />
+          </div>
+        )}
+
+        {state.isLoading && <Loader />}
+
+        {state.currentResult && (
+          <div className="current-result">
+            <ResultCard
+              result={state.currentResult}
+              onDelete={handleDeleteResult}
+              showDelete={true}
+            />
+          </div>
+        )}
+
+        {state.history.length > 1 && (
+          <div className="history-section">
+            <h2>Previous Analyses</h2>
+            <div className="history-grid">
+              {state.history.slice(1).map(result => (
+                <ResultCard
+                  key={result.id}
+                  result={result}
+                  onDelete={handleDeleteResult}
+                  showDelete={true}
+                />
               ))}
             </div>
-            <div className="text-center mt-12">
-              <button
-                onClick={handleReset}
-                className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-brand-purple"
-              >
-                Start Over
-              </button>
-            </div>
           </div>
         )}
-
-        {!isLoading && !results && (
-             <div className="sticky bottom-4 mt-8 w-full flex justify-center z-10">
-                <button
-                    onClick={handleSubmit}
-                    disabled={!isFormComplete || isLoading}
-                    className="flex items-center justify-center gap-3 w-full max-w-xs sm:max-w-sm md:max-w-md bg-gradient-to-r from-brand-purple to-brand-pink text-white font-bold py-4 px-8 rounded-full text-lg shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transform hover:scale-105"
-                >
-                    <SparklesIcon />
-                    {isLoading ? 'Generating...' : 'Enhance My Image'}
-                </button>
-            </div>
-        )}
-      </div>
+      </main>
     </div>
   );
 };

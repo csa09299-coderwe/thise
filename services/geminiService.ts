@@ -68,12 +68,34 @@ EXAMPLES (how to interpret short user prompts):
 `;
 
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// Get API key with proper fallback and validation
+const getApiKey = (): string => {
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY) as string | undefined;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY or API_KEY environment variable is not set. Please configure your API key.');
+  }
+  return apiKey;
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 const fileToGenerativePart = async (file: File) => {
-  const base64EncodedDataPromise = new Promise<string>((resolve) => {
+  const base64EncodedDataPromise = new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        const base64 = result.split(',')[1];
+        if (base64) {
+          resolve(base64);
+        } else {
+          reject(new Error('Failed to extract base64 data from file'));
+        }
+      } else {
+        reject(new Error('FileReader result is not a string'));
+      }
+    };
     reader.readAsDataURL(file);
   });
   return {
@@ -114,6 +136,14 @@ const responseSchema = {
 
 
 export const generateImageVariants = async (imageFile: File, userPrompt: string): Promise<ArtEnhanceResponse> => {
+  // Validate inputs
+  if (!imageFile) {
+    throw new Error('Image file is required');
+  }
+  if (!userPrompt || userPrompt.trim().length === 0) {
+    throw new Error('User prompt is required');
+  }
+
   // Part 1: Get the enhancement plan from the text model.
   const imagePart = await fileToGenerativePart(imageFile);
   
@@ -134,54 +164,101 @@ export const generateImageVariants = async (imageFile: File, userPrompt: string)
 
   let plan: ArtEnhanceResponse;
   try {
+    if (!planResponse.text) {
+      throw new Error('No text response from AI model');
+    }
     const jsonText = planResponse.text.trim();
     plan = JSON.parse(jsonText);
+    
+    // Validate plan structure
+    if (!plan.variants || !Array.isArray(plan.variants) || plan.variants.length === 0) {
+      throw new Error('Invalid plan: variants array is missing or empty');
+    }
   } catch (error) {
     console.error("Failed to parse JSON plan:", planResponse.text, error);
-    throw new Error("Received an invalid response from the AI. The plan was not in the correct format.");
+    throw new Error(error instanceof Error ? error.message : "Received an invalid response from the AI. The plan was not in the correct format.");
   }
 
   // Part 2: Generate an image for each variant in the plan, in parallel.
   const imageGenerationPromises = plan.variants.map(async (variant) => {
-    const generationPrompt = `
-      Based on the original image, create a new version with the following changes.
-      Purpose: ${variant.purpose}.
-      Summary of changes: ${variant.changes_summary}.
-      Specific steps to apply: ${variant.steps.join(', ')}.
-    `;
-    
-    const imageResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          imagePart, // re-use the original image part
-          { text: generationPrompt },
-        ],
-      },
-      config: {
-        responseModalities: [Modality.IMAGE],
-      },
-    });
+    try {
+      const generationPrompt = `
+        Based on the original image, create a new version with the following changes.
+        Purpose: ${variant.purpose}.
+        Summary of changes: ${variant.changes_summary}.
+        Specific steps to apply: ${variant.steps.join(', ')}.
+      `;
+      
+      const imageResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            imagePart, // re-use the original image part
+            { text: generationPrompt },
+          ],
+        },
+        config: {
+          responseModalities: [Modality.IMAGE],
+        },
+      });
 
-    // Extract the image data from the response
-    for (const part of imageResponse.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64ImageBytes: string = part.inlineData.data;
-        const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-        // Return a complete Variant object with the new image_url
-        return { ...variant, image_url: imageUrl };
+      // Validate response structure
+      if (!imageResponse.candidates || imageResponse.candidates.length === 0) {
+        throw new Error(`No candidates in response for variant: ${variant.purpose}`);
       }
+
+      const candidate = imageResponse.candidates[0];
+      if (!candidate || !candidate.content || !candidate.content.parts) {
+        throw new Error(`Invalid response structure for variant: ${variant.purpose}`);
+      }
+
+      // Extract the image data from the response
+      for (const part of candidate.content.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          const base64ImageBytes: string = part.inlineData.data;
+          const imageUrl = `data:${part.inlineData.mimeType || 'image/png'};base64,${base64ImageBytes}`;
+          // Return a complete Variant object with the new image_url
+          return { ...variant, image_url: imageUrl };
+        }
+      }
+      
+      // This should not be reached if the API call is successful
+      throw new Error(`Image generation failed for variant: ${variant.purpose} - no image data found in response`);
+    } catch (error) {
+      console.error(`Error generating image for variant ${variant.id}:`, error);
+      // Return variant with placeholder or throw based on error severity
+      if (error instanceof Error && error.message.includes('API')) {
+        throw error;
+      }
+      // Return variant with error indicator
+      return { 
+        ...variant, 
+        image_url: '', 
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
     }
-    
-    // This should not be reached if the API call is successful
-    throw new Error(`Image generation failed for variant: ${variant.purpose}`);
   });
 
-  const generatedVariants = await Promise.all(imageGenerationPromises);
+  // Use Promise.allSettled to handle partial failures gracefully
+  const results = await Promise.allSettled(imageGenerationPromises);
+  const generatedVariants: Variant[] = [];
+  
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      generatedVariants.push(result.value);
+    } else {
+      console.error('Variant generation failed:', result.reason);
+      // Optionally add an error variant or skip it
+    }
+  }
+
+  if (generatedVariants.length === 0) {
+    throw new Error('All image generation attempts failed. Please try again.');
+  }
 
   // Part 3: Combine the generated variants with any warnings and return.
   return {
     variants: generatedVariants,
-    warnings: plan.warnings,
+    warnings: plan.warnings || [],
   };
 };

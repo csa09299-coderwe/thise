@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ImageUpload } from './components/ImageUpload';
@@ -21,8 +20,14 @@ const App: React.FC = () => {
     setImageFile(file);
     if (file) {
       const reader = new FileReader();
+      reader.onerror = () => {
+        setError('Failed to read the image file. Please try another file.');
+        setImagePreview(null);
+      };
       reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+        if (reader.result && typeof reader.result === 'string') {
+          setImagePreview(reader.result);
+        }
       };
       reader.readAsDataURL(file);
     } else {
@@ -31,21 +36,49 @@ const App: React.FC = () => {
   }, []);
 
   const handleSubmit = async () => {
-    if (!imageFile || !prompt) {
-      setError('Please upload an image and provide instructions.');
+    if (!imageFile) {
+      setError('Please upload an image.');
       return;
     }
+    if (!prompt.trim()) {
+      setError('Please provide instructions.');
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
     setResults(null);
 
     try {
-      const response = await generateImageVariants(imageFile, prompt);
+      const response = await generateImageVariants(imageFile, prompt.trim());
+      
+      // Validate response
+      if (!response || !response.variants || response.variants.length === 0) {
+        throw new Error('No variants were generated. Please try again.');
+      }
+      
       setResults(response);
     } catch (e) {
-      console.error(e);
-      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-      setError(`Failed to generate variants. ${errorMessage.includes('400') ? 'The request was invalid. Please check your inputs.' : 'Please try again later.'}`);
+      console.error('Error generating variants:', e);
+      let errorMessage = 'An unknown error occurred. Please try again later.';
+      
+      if (e instanceof Error) {
+        errorMessage = e.message;
+        // Provide more user-friendly messages for common errors
+        if (errorMessage.includes('API_KEY') || errorMessage.includes('API key')) {
+          errorMessage = 'API key is not configured. Please check your environment variables.';
+        } else if (errorMessage.includes('400')) {
+          errorMessage = 'The request was invalid. Please check your image and instructions.';
+        } else if (errorMessage.includes('401') || errorMessage.includes('403')) {
+          errorMessage = 'Authentication failed. Please check your API key.';
+        } else if (errorMessage.includes('429')) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (errorMessage.includes('500') || errorMessage.includes('503')) {
+          errorMessage = 'Server error. Please try again later.';
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +108,11 @@ const App: React.FC = () => {
                 <PromptInput value={prompt} onChange={setPrompt} />
               </div>
             </div>
-             {error && <p className="text-red-400 text-center text-sm mt-4">{error}</p>}
+            {error && (
+              <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
           </div>
         )}
         

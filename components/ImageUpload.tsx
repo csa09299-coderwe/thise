@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { UploadIcon } from './IconComponents';
 
@@ -15,14 +14,16 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImageChange, imagePr
     onImageChange(file);
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     const file = event.dataTransfer.files?.[0] || null;
-    onImageChange(file);
+    if (file && file.type.startsWith('image/')) {
+      onImageChange(file);
+    }
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
   };
@@ -34,11 +35,10 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImageChange, imagePr
   return (
     <div className="w-full">
       <h2 className="text-xl font-semibold text-gray-300 mb-6">Your Image</h2>
-      <label
-        htmlFor="image-upload"
-        onClick={handleClick}
+      <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
+        onClick={handleClick}
         className="cursor-pointer w-full aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-brand-purple hover:text-brand-purple transition-all duration-300 p-4"
       >
         <input
@@ -49,16 +49,18 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImageChange, imagePr
           className="hidden"
           onChange={handleFileChange}
         />
-        {imagePreview ? (
-          <img src={imagePreview} alt="Selected preview" className="max-h-full max-w-full object-contain rounded-lg" />
-        ) : (
-          <div className="text-center space-y-2">
-            <UploadIcon />
-            <p className="font-semibold">Click to upload or drag & drop</p>
-            <p className="text-sm text-gray-500">PNG, JPG, WEBP, etc.</p>
-          </div>
-        )}
-      </label>
+        <label htmlFor="image-upload" className="cursor-pointer w-full h-full flex items-center justify-center">
+          {imagePreview ? (
+            <img src={imagePreview} alt="Selected preview" className="max-h-full max-w-full object-contain rounded-lg" />
+          ) : (
+            <div className="text-center space-y-2">
+              <UploadIcon />
+              <p className="font-semibold">Click to upload or drag & drop</p>
+              <p className="text-sm text-gray-500">PNG, JPG, WEBP, etc.</p>
+            </div>
+          )}
+        </label>
+      </div>
     </div>
   );
 };

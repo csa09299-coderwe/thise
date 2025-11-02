@@ -1,66 +1,172 @@
-import React, { useRef } from 'react';
-import { UploadIcon } from './IconComponents';
+import React, { useCallback, useState } from 'react';
+import { UploadedFile, FileUploadError, ValidationError } from '../types';
 
 interface ImageUploadProps {
-  onImageChange: (file: File | null) => void;
-  imagePreview: string | null;
+  onFileSelect: (file: UploadedFile) => void;
+  className?: string;
+  disabled?: boolean;
 }
 
-export const ImageUpload: React.FC<ImageUploadProps> = ({ onImageChange, imagePreview }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const ImageUpload: React.FC<ImageUploadProps> = ({ 
+  onFileSelect, 
+  className = '', 
+  disabled = false 
+}) => {
+  const [dragActive, setDragActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
-    onImageChange(file);
-  };
+  // Configuration from environment variables
+  const MAX_FILE_SIZE = parseInt(import.meta.env.VITE_MAX_FILE_SIZE || '10485760'); // 10MB default
+  const ALLOWED_TYPES = (import.meta.env.VITE_ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/webp').split(',');
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const file = event.dataTransfer.files?.[0] || null;
-    if (file && file.type.startsWith('image/')) {
-      onImageChange(file);
+  const validateFile = useCallback((file: File): void => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      throw new ValidationError(`File size must be less than ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`);
     }
-  };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
+    // Check file type
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      throw new ValidationError(`File type ${file.type} is not allowed. Allowed types: ${ALLOWED_TYPES.join(', ')}`);
+    }
 
-  const handleClick = () => {
-    fileInputRef.current?.click();
-  };
+    // Check file name for potential security issues
+    if (file.name.includes('..') || /[<>:"/\\|?*]/.test(file.name)) {
+      throw new ValidationError('Invalid file name');
+    }
+  }, [MAX_FILE_SIZE, ALLOWED_TYPES]);
+
+  const processFile = useCallback(async (file: File): Promise<UploadedFile> => {
+    try {
+      validateFile(file);
+
+      // Convert file to data URL with proper error handling
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new FileUploadError('Failed to process file'));
+          }
+        };
+
+        reader.onerror = () => {
+          reject(new FileUploadError('Failed to read file'));
+        };
+
+        // Set timeout to prevent hanging
+        setTimeout(() => {
+          reject(new FileUploadError('File processing timeout'));
+        }, 10000);
+
+        reader.readAsDataURL(file);
+      });
+
+      return {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+        dataUrl
+      };
+    } catch (error) {
+      if (error instanceof ValidationError || error instanceof FileUploadError) {
+        throw error;
+      }
+      throw new FileUploadError('Unexpected error processing file');
+    }
+  }, [validateFile]);
+
+  const handleFile = useCallback(async (file: File) => {
+    if (disabled) return;
+
+    setError(null);
+
+    try {
+      const uploadedFile = await processFile(file);
+      onFileSelect(uploadedFile);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process file';
+      setError(errorMessage);
+      console.error('File upload error:', error);
+    }
+  }, [disabled, onFileSelect, processFile]);
+
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  }, [disabled]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+
+    setDragActive(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files[0]) {
+      handleFile(files[0]);
+    }
+  }, [disabled, handleFile]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (disabled) return;
+
+    const files = e.target.files;
+    if (files && files[0]) {
+      handleFile(files[0]);
+    }
+  }, [disabled, handleFile]);
 
   return (
-    <div className="w-full">
-      <h2 className="text-xl font-semibold text-gray-300 mb-6">Your Image</h2>
+    <div className={`image-upload ${className}`}>
       <div
+        className={`upload-area ${dragActive ? 'drag-active' : ''} ${disabled ? 'disabled' : ''}`}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
         onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onClick={handleClick}
-        className="cursor-pointer w-full aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-brand-purple hover:text-brand-purple transition-all duration-300 p-4"
       >
         <input
-          id="image-upload"
-          ref={fileInputRef}
           type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileChange}
+          accept={ALLOWED_TYPES.join(',')}
+          onChange={handleChange}
+          disabled={disabled}
+          id="file-upload"
+          className="file-input"
         />
-        <label htmlFor="image-upload" className="cursor-pointer w-full h-full flex items-center justify-center">
-          {imagePreview ? (
-            <img src={imagePreview} alt="Selected preview" className="max-h-full max-w-full object-contain rounded-lg" />
-          ) : (
-            <div className="text-center space-y-2">
-              <UploadIcon />
-              <p className="font-semibold">Click to upload or drag & drop</p>
-              <p className="text-sm text-gray-500">PNG, JPG, WEBP, etc.</p>
-            </div>
-          )}
+        <label htmlFor="file-upload" className="upload-label">
+          <div className="upload-content">
+            <div className="upload-icon">📁</div>
+            <p className="upload-text">
+              {disabled ? 'Upload disabled' : 'Click to upload or drag and drop'}
+            </p>
+            <p className="upload-subtext">
+              {ALLOWED_TYPES.join(', ')} (Max {Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB)
+            </p>
+          </div>
         </label>
       </div>
+      
+      {error && (
+        <div className="error-message" role="alert">
+          <span className="error-icon">⚠️</span>
+          {error}
+        </div>
+      )}
     </div>
   );
 };
+
+export default ImageUpload;
